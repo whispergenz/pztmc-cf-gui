@@ -7,8 +7,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from PyQt6.QtCore import QLocale, QObject, QProcess, QSettings, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PyQt6.QtCore import QLocale, QObject, QProcess, QSettings, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu,
@@ -315,6 +315,18 @@ def app_icon(color="#56d99a"):
     return QIcon(pixmap)
 
 
+def power_icon(color):
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor(color), 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawArc(12, 12, 40, 40, 130 * 16, 280 * 16)
+    painter.drawLine(32, 7, 32, 30)
+    painter.end()
+    return QIcon(pixmap)
+
+
 STYLE = """
 QWidget { background: #131a25; color: #e8edf5; font-family: 'Segoe UI'; font-size: 10pt; }
 QPushButton, QComboBox, QLineEdit, QSpinBox { background: #232f41; border: 1px solid #35445c; border-radius: 7px; padding: 8px; }
@@ -322,10 +334,8 @@ QPushButton:hover { background: #30425a; }
 QPushButton:disabled, QComboBox:disabled { color: #728095; }
 QListWidget, QPlainTextEdit { background: #0d131d; border: 1px solid #35445c; border-radius: 6px; padding: 6px; }
 QListWidget::item:selected { background: #304b66; }
-QPushButton#switch { font-size: 22pt; font-weight: 600; border-radius: 32px; padding: 16px; }
-QPushButton#switch:checked { background: #56d99a; color: #102c22; border: 1px solid #56d99a; }
-QLabel#title { font-size: 21pt; font-weight: 600; }
-QLabel#subtitle { color: #a3b2c6; }
+QPushButton#switch { border-radius: 32px; padding: 6px; }
+QPushButton#switch:checked { background: #203e35; border: 1px solid #56d99a; }
 QMenu { background: #232f41; padding: 5px; }
 QMenu::item:selected { background: #35445c; }
 """
@@ -340,72 +350,54 @@ class MainWindow(QMainWindow):
         self.quitting = False
         self.setWindowTitle("Minecraft Tunnel")
         self.setWindowIcon(app_icon())
-        self.setMinimumWidth(410)
+        self.setMinimumWidth(340)
         root = QWidget()
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(24, 20, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         top = QHBoxLayout()
+        top.setSpacing(8)
         self.config = QPushButton("⚙")
         self.config.setAccessibleName("Configure tunnel profiles")
         self.config.setToolTip("Configure tunnel profiles")
-        self.config.setFixedWidth(44)
+        self.config.setFixedSize(36, 36)
         self.config.clicked.connect(self.configure)
         top.addWidget(self.config)
-        top.addStretch()
-        top.addWidget(QLabel("CLOUDFLARED  /  JAVA"))
-        layout.addLayout(top)
-        title = QLabel("Minecraft Tunnel")
-        title.setObjectName("title")
-        layout.addWidget(title)
-        subtitle = QLabel("Your connection to the server")
-        subtitle.setObjectName("subtitle")
-        layout.addWidget(subtitle)
         self.selector = QComboBox()
         self.selector.setAccessibleName("Server profile")
         self.selector.currentIndexChanged.connect(self.profile_changed)
-        layout.addWidget(self.selector)
-        self.switch = QPushButton("OFF")
+        top.addWidget(self.selector, 1)
+        layout.addLayout(top)
+        self.switch = QPushButton()
         self.switch.setObjectName("switch")
         self.switch.setCheckable(True)
-        self.switch.setMinimumHeight(80)
+        self.switch.setFixedSize(64, 64)
+        self.switch.setIconSize(QSize(32, 32))
         self.switch.clicked.connect(self.toggle)
-        layout.addWidget(self.switch)
+        layout.addWidget(self.switch, 0, Qt.AlignmentFlag.AlignHCenter)
         self.status = QLabel("Off")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
         address_row = QHBoxLayout()
         self.address = QLabel()
         self.address.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        address_row.addWidget(self.address)
+        address_row.addWidget(self.address, 1)
         self.copy = QPushButton("Copy")
         self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.join_address()))
         address_row.addWidget(self.copy)
         layout.addLayout(address_row)
-        self.listener_hint = QLabel("Configured to listen on all IPv4 interfaces. Use this PC's LAN IP to join from another device.")
-        self.listener_hint.setWordWrap(True)
-        self.listener_hint.setObjectName("subtitle")
-        self.listener_hint.hide()
-        layout.addWidget(self.listener_hint)
-        hint = QLabel("Join this address in Minecraft Java. Cloudflare may open your browser to sign in.\nOn means the local listener is ready; server access is checked when you join.")
-        hint.setWordWrap(True)
-        hint.setObjectName("subtitle")
-        layout.addWidget(hint)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color: #ff9d9d;")
         self.error.hide()
         layout.addWidget(self.error)
-        self.log_toggle = QPushButton("Show logs")
-        self.log_toggle.setCheckable(True)
-        self.log_toggle.toggled.connect(self.show_logs)
-        layout.addWidget(self.log_toggle)
         self.logs = QPlainTextEdit()
+        self.logs.setAccessibleName("Cloudflared logs")
+        self.logs.setPlaceholderText("Cloudflared logs will appear here.")
         self.logs.setReadOnly(True)
         self.logs.document().setMaximumBlockCount(1000)
-        self.logs.setMinimumHeight(150)
-        self.logs.hide()
-        layout.addWidget(self.logs)
+        self.logs.setMinimumHeight(100)
+        layout.addWidget(self.logs, 1)
         self.setCentralWidget(root)
         self.tray = QSystemTrayIcon(app_icon("#8895a8"), self)
         menu = QMenu(self)
@@ -425,7 +417,7 @@ class MainWindow(QMainWindow):
         self.controller.failed.connect(self.show_error)
         self.controller.stopped.connect(self.on_stopped)
         self.refresh_profiles(self.store.settings.value("selected", ""))
-        self.resize(430, self.sizeHint().height())
+        self.resize(380, 360)
 
     def refresh_profiles(self, selected):
         self.selector.blockSignals(True)
@@ -451,7 +443,10 @@ class MainWindow(QMainWindow):
         self.address.setText(f"Join: {self.join_address()}" if self.profiles else "Add a tunnel profile to get started")
         self.copy.setEnabled(bool(self.profiles))
         profile = self.current_profile()
-        self.listener_hint.setVisible(profile is not None and profile.local_ip == "0.0.0.0")
+        self.address.setToolTip(
+            "Configured to listen on all IPv4 interfaces. Join 127.0.0.1 on this PC; use this PC's LAN IP from another device."
+            if profile is not None and profile.local_ip == "0.0.0.0" else ""
+        )
         self.store.settings.setValue("selected", self.selector.currentText())
         self.update_state(self.controller.state)
 
@@ -482,7 +477,11 @@ class MainWindow(QMainWindow):
         self.config.setEnabled(not busy)
         self.selector.setEnabled(not busy and bool(self.profiles))
         self.switch.setChecked(state in ("Starting", "On"))
-        self.switch.setText({"Starting": "STARTING…", "Stopping": "STOPPING…", "On": "ON"}.get(state, "OFF"))
+        color = "#e7b75b" if state in ("Starting", "Stopping") else "#56d99a" if state == "On" else "#8895a8"
+        self.switch.setIcon(power_icon(color))
+        action = {"Starting": "Cancel connection", "On": "Disconnect", "Stopping": "Disconnecting…"}.get(state, "Connect")
+        self.switch.setToolTip(action)
+        self.switch.setAccessibleName(action)
         self.switch.setEnabled(bool(self.profiles) and state != "Stopping")
         self.status.setText("Local listener ready" if state == "On" else state)
         self.tray_toggle.setText("Disconnect" if state in ("Starting", "On") else "Connect")
@@ -495,12 +494,6 @@ class MainWindow(QMainWindow):
         self.error.show()
         if not self.isVisible() and self.tray.isVisible():
             self.tray.showMessage("Minecraft Tunnel", message, QSystemTrayIcon.MessageIcon.Warning)
-
-    def show_logs(self, visible):
-        self.logs.setVisible(visible)
-        self.log_toggle.setText("Hide logs" if visible else "Show logs")
-        if not visible:
-            QTimer.singleShot(0, self.adjustSize)
 
     def show_window(self):
         self.showNormal()

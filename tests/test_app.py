@@ -127,7 +127,7 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(f"Join: {address}", window.address.text())
                 window.copy.click()
                 self.assertEqual(address, APP.clipboard().text())
-                self.assertEqual(row != 2, window.listener_hint.isHidden())
+                self.assertEqual(row == 2, "all IPv4 interfaces" in window.address.toolTip())
 
     def test_settings_roundtrip_and_malformed_entries(self):
         profiles = [gui.Profile("One", "one.example.com"), gui.Profile("Two", "two.example.com", 25566)]
@@ -239,11 +239,14 @@ class AppTests(unittest.TestCase):
         self.assertFalse(window.config.isEnabled())
         self.assertFalse(window.selector.isEnabled())
         self.assertTrue(window.switch.isChecked())
-        window.log_toggle.click()
+        self.assertEqual("", window.switch.text())
+        self.assertFalse(window.switch.icon().isNull())
+        self.assertEqual("Disconnect", window.switch.toolTip())
         self.assertFalse(window.logs.isHidden())
         window.tray_toggle.trigger()
         self.assertTrue(until(lambda: controller.state == "Off"))
         self.assertTrue(window.config.isEnabled())
+        self.assertEqual("Connect", window.switch.accessibleName())
         window.show_window()
         self.assertTrue(window.isVisible())
         # Prevent QApplication.quit from ending the test runner's shared event loop.
