@@ -17,6 +17,17 @@ from PyQt6.QtWidgets import (
 )
 
 
+PALETTE = {
+    "paper": "#B59785",
+    "brown": "#55412F",
+    "red": "#640606",
+    "rooster": "#340C0C",
+    "sheep": "#110E0D",
+}
+MUTED = QColor(PALETTE["paper"]).darker(120).name()
+ERROR_TEXT = QColor(PALETTE["paper"]).lighter(130).name()
+
+
 @dataclass
 class Profile:
     name: str
@@ -221,7 +232,7 @@ class ProfileEditor(QDialog):
         layout.addWidget(hint)
         self.error = QLabel()
         self.error.setWordWrap(True)
-        self.error.setStyleSheet("color: #ff9d9d;")
+        self.error.setStyleSheet(f"color: {ERROR_TEXT};")
         layout.addWidget(self.error)
         footer = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         layout.addWidget(footer)
@@ -299,17 +310,17 @@ class ProfileEditor(QDialog):
             super().accept()
 
 
-def app_icon(color="#56d99a"):
+def app_icon(color=PALETTE["red"]):
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor("#192332"))
+    painter.setBrush(QColor(PALETTE["sheep"]))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawRoundedRect(0, 0, 64, 64, 16, 16)
     painter.setBrush(QColor(color))
     painter.drawRoundedRect(10, 22, 44, 22, 11, 11)
-    painter.setBrush(QColor("#ffffff"))
+    painter.setBrush(QColor(PALETTE["paper"]))
     painter.drawEllipse(34, 26, 14, 14)
     painter.end()
     return QIcon(pixmap)
@@ -328,17 +339,32 @@ def power_icon(color):
 
 
 STYLE = """
-QWidget { background: #131a25; color: #e8edf5; font-family: 'Segoe UI'; font-size: 10pt; }
-QPushButton, QComboBox, QLineEdit, QSpinBox { background: #232f41; border: 1px solid #35445c; border-radius: 7px; padding: 8px; }
-QPushButton:hover { background: #30425a; }
-QPushButton:disabled, QComboBox:disabled { color: #728095; }
-QListWidget, QPlainTextEdit { background: #0d131d; border: 1px solid #35445c; border-radius: 6px; padding: 6px; }
-QListWidget::item:selected { background: #304b66; }
+QWidget { background: @sheep; color: @paper; font-family: 'Segoe UI'; font-size: 10pt; }
+QPushButton, QComboBox, QLineEdit, QSpinBox { background: @rooster; border: 1px solid @brown; border-radius: 7px; padding: 8px; selection-background-color: @paper; selection-color: @sheep; }
+QPushButton:hover { background: @brown; }
+QPushButton:focus, QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QListWidget:focus { border: 1px solid @paper; }
+QPushButton:disabled, QComboBox:disabled, QLineEdit:disabled, QSpinBox:disabled { color: @muted; background: @sheep; }
+QLineEdit, QSpinBox, QPlainTextEdit { placeholder-text-color: @muted; }
+QListWidget, QPlainTextEdit { background: @sheep; border: 1px solid @brown; border-radius: 6px; padding: 6px; selection-background-color: @paper; selection-color: @sheep; }
+QListWidget::item:selected { background: @paper; color: @sheep; }
+QComboBox QAbstractItemView { background: @rooster; color: @paper; border: 1px solid @brown; selection-background-color: @paper; selection-color: @sheep; }
 QPushButton#switch { border-radius: 32px; padding: 6px; }
-QPushButton#switch:checked { background: #203e35; border: 1px solid #56d99a; }
-QMenu { background: #232f41; padding: 5px; }
-QMenu::item:selected { background: #35445c; }
+QPushButton#switch:checked { background: @red; border: 1px solid @paper; }
+QPushButton#switch:checked:hover { background: @rooster; }
+QMenu { background: @rooster; border: 1px solid @brown; padding: 5px; }
+QMenu::item:selected { background: @brown; color: @paper; }
+QMenu::item:disabled { color: @muted; }
+QMenu::separator { height: 1px; background: @brown; margin: 4px; }
+QToolTip { background: @rooster; color: @paper; border: 1px solid @paper; padding: 4px; }
+QScrollBar:vertical { background: @sheep; width: 10px; }
+QScrollBar:horizontal { background: @sheep; height: 10px; }
+QScrollBar::handle { background: @brown; border-radius: 4px; min-width: 10px; min-height: 10px; }
+QScrollBar::handle:hover { background: @paper; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: @sheep; }
 """
+for _name, _color in {**PALETTE, "muted": MUTED}.items():
+    STYLE = STYLE.replace(f"@{_name}", _color)
 
 
 class MainWindow(QMainWindow):
@@ -388,7 +414,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(address_row)
         self.error = QLabel()
         self.error.setWordWrap(True)
-        self.error.setStyleSheet("color: #ff9d9d;")
+        self.error.setStyleSheet(f"color: {ERROR_TEXT};")
         self.error.hide()
         layout.addWidget(self.error)
         self.logs = QPlainTextEdit()
@@ -399,7 +425,7 @@ class MainWindow(QMainWindow):
         self.logs.setMinimumHeight(100)
         layout.addWidget(self.logs, 1)
         self.setCentralWidget(root)
-        self.tray = QSystemTrayIcon(app_icon("#8895a8"), self)
+        self.tray = QSystemTrayIcon(app_icon(PALETTE["brown"]), self)
         menu = QMenu(self)
         show_action = menu.addAction("Show")
         show_action.triggered.connect(self.show_window)
@@ -477,7 +503,7 @@ class MainWindow(QMainWindow):
         self.config.setEnabled(not busy)
         self.selector.setEnabled(not busy and bool(self.profiles))
         self.switch.setChecked(state in ("Starting", "On"))
-        color = "#e7b75b" if state in ("Starting", "Stopping") else "#56d99a" if state == "On" else "#8895a8"
+        color = PALETTE["paper"] if state in ("Starting", "On", "Stopping") else MUTED
         self.switch.setIcon(power_icon(color))
         action = {"Starting": "Cancel connection", "On": "Disconnect", "Stopping": "Disconnecting…"}.get(state, "Connect")
         self.switch.setToolTip(action)
@@ -486,7 +512,7 @@ class MainWindow(QMainWindow):
         self.status.setText("Local listener ready" if state == "On" else state)
         self.tray_toggle.setText("Disconnect" if state in ("Starting", "On") else "Connect")
         self.tray_toggle.setEnabled(bool(self.profiles) and state != "Stopping")
-        self.tray.setIcon(app_icon("#56d99a" if state == "On" else "#8895a8"))
+        self.tray.setIcon(app_icon(PALETTE["red"] if state == "On" else PALETTE["brown"]))
         self.tray.setToolTip(f"Minecraft Tunnel — {state}")
 
     def show_error(self, message):
