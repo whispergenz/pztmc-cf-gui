@@ -68,6 +68,67 @@ class AppTests(unittest.TestCase):
             with self.subTest(port=port), self.assertRaises(ValueError):
                 gui.Profile("Server", "mc.example.com", port).validate()
 
+    def test_local_ip_validation(self):
+        for ip in ("127.0.0.1", "127.0.0.2", "192.168.1.10", "0.0.0.0"):
+            with self.subTest(ip=ip):
+                gui.Profile("Test", "mc.example.com", local_ip=ip).validate()
+        for ip in ("", "localhost", "::1", "256.1.1.1", "127.1", "127.0.0.1:25565",
+                   "http://127.0.0.1", "127.0.0.1/8", "127.0.0.1 ", None, 1234):
+            with self.subTest(ip=ip), self.assertRaises(ValueError):
+                gui.Profile("Test", "mc.example.com", local_ip=ip).validate()
+
+    def test_local_ip_settings_and_legacy_profiles(self):
+        self.store.settings.setValue("profiles", json.dumps([
+            {"name": "Legacy", "hostname": "old.example.com", "port": 25566},
+            {"name": "LAN", "hostname": "lan.example.com", "port": 25567, "local_ip": "192.168.1.10"},
+        ]))
+        profiles = self.store.load()
+        self.assertEqual("127.0.0.1", profiles[0].local_ip)
+        self.assertEqual(25566, profiles[0].port)
+        self.assertEqual("192.168.1.10", profiles[1].local_ip)
+        self.store.save(profiles, "LAN")
+        self.assertEqual(profiles, self.store.load())
+
+    def test_local_ip_editor_save_switch_and_cancel(self):
+        original = [gui.Profile("One", "one.example.com"),
+                    gui.Profile("Two", "two.example.com", local_ip="192.168.1.10")]
+        editor = gui.ProfileEditor(original, "One")
+        self.assertEqual("127.0.0.1", editor.local_ip.text())
+        editor.local_ip.setText("invalid")
+        editor.accept()
+        self.assertIn("IPv4", editor.error.text())
+        editor.local_ip.setText(" 127.0.0.2 ")
+        editor.items.setCurrentRow(1)
+        self.assertEqual("127.0.0.2", editor.profiles[0].local_ip)
+        self.assertEqual("192.168.1.10", editor.local_ip.text())
+        editor.local_ip.setText("0.0.0.0")
+        editor.accept()
+        self.assertEqual(QDialog.DialogCode.Accepted, editor.result())
+        self.assertEqual("0.0.0.0", editor.profiles[1].local_ip)
+        self.store.save(editor.profiles, editor.selected)
+        self.assertEqual(editor.profiles, self.store.load())
+        cancelled = gui.ProfileEditor(original, "One")
+        cancelled.local_ip.setText("127.0.0.3")
+        cancelled.items.setCurrentRow(1)
+        cancelled.reject()
+        self.assertEqual("127.0.0.1", original[0].local_ip)
+
+    def test_local_ip_display_and_clipboard(self):
+        self.store.save([
+            gui.Profile("Loopback", "mc.example.com", local_ip="127.0.0.2"),
+            gui.Profile("LAN", "mc.example.com", 25566, "192.168.1.10"),
+            gui.Profile("All", "mc.example.com", 25567, "0.0.0.0"),
+        ], "Loopback")
+        window = gui.MainWindow(self.store)
+        self.windows.append(window)
+        for row, address in enumerate(("127.0.0.2:25565", "192.168.1.10:25566", "127.0.0.1:25567")):
+            with self.subTest(row=row):
+                window.selector.setCurrentIndex(row)
+                self.assertEqual(f"Join: {address}", window.address.text())
+                window.copy.click()
+                self.assertEqual(address, APP.clipboard().text())
+                self.assertEqual(row != 2, window.listener_hint.isHidden())
+
     def test_settings_roundtrip_and_malformed_entries(self):
         profiles = [gui.Profile("One", "one.example.com"), gui.Profile("Two", "two.example.com", 25566)]
         self.store.save(profiles, "Two")
@@ -108,10 +169,11 @@ class AppTests(unittest.TestCase):
         controller = self.controller("import sys,time\nprint(repr(sys.argv[1:]), flush=True)\nprint('Start Websocket ', end='', flush=True)\ntime.sleep(.05)\nprint('listener host=127.0.0.1:25565', flush=True)\ntime.sleep(60)\n")
         logs = []
         controller.log.connect(logs.append)
-        controller.start(gui.Profile("Test", "mc.example.com"))
+        controller.start(gui.Profile("Test", "mc.example.com", local_ip="127.0.0.2"))
         self.assertEqual("Starting", controller.state)
         self.assertTrue(until(lambda: controller.state == "On"))
-        self.assertIn("['access', 'tcp', '--hostname', 'mc.example.com', '--url', '127.0.0.1:25565']", logs)
+        self.assertIn("['access', 'tcp', '--hostname', 'mc.example.com', '--url', '127.0.0.2:25565']", logs)
+        self.assertIn("Starting local listener at 127.0.0.2:25565 for mc.example.com", logs)
         controller.start(gui.Profile("Other", "other.example.com"))
         controller.stop()
         self.assertTrue(until(lambda: controller.state == "Off"))

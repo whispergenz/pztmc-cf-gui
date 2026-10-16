@@ -1,6 +1,7 @@
 """Minecraft Java client for an existing Cloudflare TCP tunnel."""
 
 import json
+from ipaddress import IPv4Address
 import re
 import sys
 from dataclasses import asdict, dataclass
@@ -21,6 +22,7 @@ class Profile:
     name: str
     hostname: str
     port: int = 25565
+    local_ip: str = "127.0.0.1"
 
     def validate(self):
         if not self.name.strip():
@@ -33,6 +35,12 @@ class Profile:
             raise ValueError("Enter a hostname such as mc.example.com, without https://, a path, or a port.")
         if type(self.port) is not int or not 1 <= self.port <= 65535:
             raise ValueError("Local port must be between 1 and 65535.")
+        try:
+            if not isinstance(self.local_ip, str):
+                raise ValueError
+            IPv4Address(self.local_ip)
+        except ValueError:
+            raise ValueError("Enter a valid local IPv4 address, such as 127.0.0.1 or 0.0.0.0.") from None
 
 
 class ProfileStore:
@@ -115,8 +123,8 @@ class TunnelController(QObject):
             return
         self._set_state("Starting")
         args = self.prefix_args + ["access", "tcp", "--hostname", profile.hostname,
-                                   "--url", f"127.0.0.1:{profile.port}"]
-        self.log.emit(f"Starting local listener at 127.0.0.1:{profile.port} for {profile.hostname}")
+                                   "--url", f"{profile.local_ip}:{profile.port}"]
+        self.log.emit(f"Starting local listener at {profile.local_ip}:{profile.port} for {profile.hostname}")
         self.start_timer.start()
         self.process.start(self.executable, args)
 
@@ -180,7 +188,7 @@ class ProfileEditor(QDialog):
     def __init__(self, profiles, selected, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Tunnel profiles")
-        self.resize(510, 390)
+        self.resize(510, 460)
         self.profiles = [Profile(**asdict(p)) for p in profiles]
         self.selected = selected
         self.current = -1
@@ -197,15 +205,18 @@ class ProfileEditor(QDialog):
         self.name = QLineEdit()
         self.host = QLineEdit()
         self.host.setPlaceholderText("mc.example.com")
+        self.local_ip = QLineEdit()
+        self.local_ip.setPlaceholderText("127.0.0.1")
         self.port = QSpinBox()
         self.port.setLocale(QLocale.c())
         self.port.setRange(1, 65535)
         self.port.setValue(25565)
         form.addRow("Profile name", self.name)
         form.addRow("Tunnel hostname", self.host)
+        form.addRow("Local IP", self.local_ip)
         form.addRow("Local port", self.port)
         layout.addLayout(form)
-        hint = QLabel("Use an existing Cloudflare TCP tunnel. Minecraft joins 127.0.0.1 at this port.")
+        hint = QLabel("Use an IP on this PC. 127.0.0.1 accepts local connections; 0.0.0.0 listens on all IPv4 interfaces. Minecraft on this PC can then join 127.0.0.1.")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.error = QLabel()
@@ -233,7 +244,8 @@ class ProfileEditor(QDialog):
     def commit(self):
         if self.current < 0:
             return True
-        profile = Profile(self.name.text().strip(), self.host.text().strip().lower(), self.port.value())
+        profile = Profile(self.name.text().strip(), self.host.text().strip().lower(),
+                          self.port.value(), self.local_ip.text().strip())
         try:
             profile.validate()
             if any(i != self.current and p.name.casefold() == profile.name.casefold()
@@ -255,10 +267,11 @@ class ProfileEditor(QDialog):
             return
         self.current = row
         enabled = row >= 0
-        for field in (self.name, self.host, self.port):
+        for field in (self.name, self.host, self.local_ip, self.port):
             field.setEnabled(enabled)
         self.name.setText(self.profiles[row].name if enabled else "")
         self.host.setText(self.profiles[row].hostname if enabled else "")
+        self.local_ip.setText(self.profiles[row].local_ip if enabled else "127.0.0.1")
         self.port.setValue(self.profiles[row].port if enabled else 25565)
 
     def add_profile(self):
@@ -369,6 +382,11 @@ class MainWindow(QMainWindow):
         self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.join_address()))
         address_row.addWidget(self.copy)
         layout.addLayout(address_row)
+        self.listener_hint = QLabel("Configured to listen on all IPv4 interfaces. Use this PC's LAN IP to join from another device.")
+        self.listener_hint.setWordWrap(True)
+        self.listener_hint.setObjectName("subtitle")
+        self.listener_hint.hide()
+        layout.addWidget(self.listener_hint)
         hint = QLabel("Join this address in Minecraft Java. Cloudflare may open your browser to sign in.\nOn means the local listener is ready; server access is checked when you join.")
         hint.setWordWrap(True)
         hint.setObjectName("subtitle")
@@ -424,11 +442,16 @@ class MainWindow(QMainWindow):
 
     def join_address(self):
         profile = self.current_profile()
-        return f"127.0.0.1:{profile.port}" if profile else ""
+        if not profile:
+            return ""
+        ip = "127.0.0.1" if profile.local_ip == "0.0.0.0" else profile.local_ip
+        return f"{ip}:{profile.port}"
 
     def profile_changed(self):
         self.address.setText(f"Join: {self.join_address()}" if self.profiles else "Add a tunnel profile to get started")
         self.copy.setEnabled(bool(self.profiles))
+        profile = self.current_profile()
+        self.listener_hint.setVisible(profile is not None and profile.local_ip == "0.0.0.0")
         self.store.settings.setValue("selected", self.selector.currentText())
         self.update_state(self.controller.state)
 
