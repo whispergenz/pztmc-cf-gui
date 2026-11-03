@@ -2,6 +2,7 @@
 
 import json
 from ipaddress import IPv4Address
+import platform
 import re
 import sys
 from dataclasses import asdict, dataclass
@@ -81,11 +82,35 @@ class ProfileStore:
         self.settings.setValue("selected", selected)
         self.settings.sync()
         if self.settings.status() != QSettings.Status.NoError:
-            raise OSError("Could not save profiles to your Windows user settings.")
+            raise OSError("Could not save profiles to your user settings.")
+
+
+def cloudflared_candidates():
+    machine = platform.machine().lower()
+    if sys.platform.startswith("win"):
+        if machine in {"arm64", "aarch64"}:
+            return ["cloudflared-windows-arm64.exe", "cloudflared-windows-386.exe"]
+        return ["cloudflared-windows-amd64.exe", "cloudflared-windows-386.exe"]
+    if sys.platform == "darwin":
+        if machine in {"arm64", "aarch64"}:
+            return ["cloudflared-darwin-arm64", "cloudflared-darwin-amd64"]
+        return ["cloudflared-darwin-amd64", "cloudflared-darwin-arm64"]
+    if machine in {"arm64", "aarch64"}:
+        return ["cloudflared-linux-arm64", "cloudflared-linux-amd64"]
+    if machine in {"armv7l", "armv6l", "arm"}:
+        return ["cloudflared-linux-arm", "cloudflared-linux-arm64"]
+    if machine in {"i386", "i686", "x86"}:
+        return ["cloudflared-linux-386", "cloudflared-linux-amd64"]
+    return ["cloudflared-linux-amd64", "cloudflared-linux-386"]
 
 
 def binary_path():
-    return Path(__file__).resolve().parent / "cloudflared" / "cloudflared-windows-386.exe"
+    binary_dir = Path(__file__).resolve().parent / "cloudflared"
+    for name in cloudflared_candidates():
+        path = binary_dir / name
+        if path.is_file():
+            return path
+    return binary_dir / cloudflared_candidates()[0]
 
 
 class TunnelController(QObject):

@@ -2,10 +2,11 @@
 from pathlib import Path
 
 root = Path(SPECPATH)
+cloudflared = sorted((root / "cloudflared").glob("cloudflared-*"))
 a = Analysis(
     [str(root / 'cfgui-main.py')],
     pathex=[str(root)],
-    binaries=[(str(root / 'cloudflared' / 'cloudflared-windows-386.exe'), 'cloudflared')],
+    binaries=[(str(path), 'cloudflared') for path in cloudflared if path.is_file()],
     datas=[], hiddenimports=[], hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=[], noarchive=False,
 )
